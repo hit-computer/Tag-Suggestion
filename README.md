@@ -1,2 +1,2 @@
 # Tag-Suggestion
-这部分实验模型代码是在hed-dlg-truncated(https://github.com/julianser/hed-dlg-truncated)基础上进行修改的。不过他们的代码非常复杂，实现的功能也很多，其实我最终所用的部分很少。由于刚开始学习Theano时就接触到这份代码，当时也是一边参考theano官方文档一边学习这份代码的，最后索性自己的模型也就在这份代码的基础上进行搭建啦。
+这部分实验模型代码是在hed-dlg-truncated(https://github.com/julianser/hed-dlg-truncated)基础上进行修改的。不过他们的代码非常复杂，实现的功能也很多，我最终所用的部分很少。由于刚开始学习Theano时就接触到这份代码，当时也是一边参考theano官方文档一边学习这份代码的，最后索性自己的模型也就在这份代码的基础上进行搭建了。
