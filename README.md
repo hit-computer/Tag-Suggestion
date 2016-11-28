@@ -9,7 +9,7 @@
 
 ![model](model.jpg?raw=true "model")
 
-事实上，除了上述用CNN学习句子向量表示以外我们还尝试了用RNN（GRU）、char-rnn（可以避免分词带来的错误以及解决未登录词的问题）、Skip-Thought学习句子表示，以及NAACL2016年的一篇论文中的模型[Hierarchical Attention](http://www.aclweb.org/anthology/N16-1174)。
+事实上，除了上述用CNN学习句子向量表示以外，我们还尝试了用RNN（GRU）、char-rnn（可以避免分词带来的错误以及解决未登录词的问题）、Skip-Thought学习句子表示，以及NAACL2016年的一篇论文中的模型[Hierarchical Attention](http://www.aclweb.org/anthology/N16-1174)。
 
 实验
 --------------------------------------------------------
