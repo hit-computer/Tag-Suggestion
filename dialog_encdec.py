@@ -16,7 +16,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 from theano.sandbox.scan import scan
-#from theano import scan
 from theano.sandbox.rng_mrg import MRG_RandomStreams
 from theano.tensor.nnet.conv3d2d import *
 
@@ -26,10 +25,6 @@ from model import *
 from utils import *
 
 import operator
-
-# Theano speed-up
-#theano.config.scan.allow_gc = False
-#
 
 def add_to_params(params, new_param):
     params.append(new_param)
@@ -43,12 +38,11 @@ class EncoderDecoderBase():
         self.state = state
         self.__dict__.update(state)
         
-        self.dialogue_rec_activation = eval(self.dialogue_rec_activation)
-        self.sent_rec_activation = eval(self.sent_rec_activation)
+        self.GRU_rec_activation = eval(self.GRU_rec_activation)
          
         self.params = []
 
-class UtteranceEncoder(EncoderDecoderBase):
+class WordEncoder(EncoderDecoderBase):
     def init_params(self, word_embedding_param):
         # Initialzie W_emb to given word embeddings
         assert(word_embedding_param != None)
@@ -111,20 +105,13 @@ class UtteranceEncoder(EncoderDecoderBase):
         self.name = name
         self.init_params(word_embedding_param)
 
-class DialogEncoder(EncoderDecoderBase):
+class SentEncoder(EncoderDecoderBase):
     def init_params(self):
         """ Context weights """
 
-        if self.bidirectional_utterance_encoder:
-            # With the bidirectional flag, the dialog encoder gets input 
-            # from both the forward and backward utterance encoders, hence it is double qdim_encoder
-            input_dim = self.qdim_encoder
-        else:
-            # Without the bidirectional flag, the dialog encoder only gets input
-            # from the forward utterance encoder, which has dim self.qdim_encoder
-            input_dim = self.qdim_encoder
-
+        input_dim = self.qdim_encoder
         transformed_input_dim = input_dim
+        
         if self.deep_dialogue_input:
             self.Ws_deep_input = add_to_params(self.params, theano.shared(value=NormalInit(self.rng, input_dim, self.sdim), name='Ws_deep_input'+self.name))
             self.bs_deep_input = add_to_params(self.params, theano.shared(value=np.zeros((self.sdim,), dtype='float32'), name='bs_deep_input'+self.name))
@@ -136,37 +123,23 @@ class DialogEncoder(EncoderDecoderBase):
         self.bs_hh = add_to_params(self.params, theano.shared(value=np.zeros((self.sdim,), dtype='float32'), name='bs_hh'+self.name))
 
 
-        if self.dialogue_encoder_gating == "GRU":
-            self.Ws_in_r = add_to_params(self.params, theano.shared(value=NormalInit(self.rng, transformed_input_dim, self.sdim), name='Ws_in_r'+self.name))
-            self.Ws_in_z = add_to_params(self.params, theano.shared(value=NormalInit(self.rng, transformed_input_dim, self.sdim), name='Ws_in_z'+self.name))
-            self.Ws_hh_r = add_to_params(self.params, theano.shared(value=OrthogonalInit(self.rng, self.sdim, self.sdim), name='Ws_hh_r'+self.name))
-            self.Ws_hh_z = add_to_params(self.params, theano.shared(value=OrthogonalInit(self.rng, self.sdim, self.sdim), name='Ws_hh_z'+self.name))
-            self.bs_z = add_to_params(self.params, theano.shared(value=np.zeros((self.sdim,), dtype='float32'), name='bs_z'+self.name))
-            self.bs_r = add_to_params(self.params, theano.shared(value=np.zeros((self.sdim,), dtype='float32'), name='bs_r'+self.name))
+        self.Ws_in_r = add_to_params(self.params, theano.shared(value=NormalInit(self.rng, transformed_input_dim, self.sdim), name='Ws_in_r'+self.name))
+        self.Ws_in_z = add_to_params(self.params, theano.shared(value=NormalInit(self.rng, transformed_input_dim, self.sdim), name='Ws_in_z'+self.name))
+        self.Ws_hh_r = add_to_params(self.params, theano.shared(value=OrthogonalInit(self.rng, self.sdim, self.sdim), name='Ws_hh_r'+self.name))
+        self.Ws_hh_z = add_to_params(self.params, theano.shared(value=OrthogonalInit(self.rng, self.sdim, self.sdim), name='Ws_hh_z'+self.name))
+        self.bs_z = add_to_params(self.params, theano.shared(value=np.zeros((self.sdim,), dtype='float32'), name='bs_z'+self.name))
+        self.bs_r = add_to_params(self.params, theano.shared(value=np.zeros((self.sdim,), dtype='float32'), name='bs_r'+self.name))
     
-    def plain_dialogue_step(self, h_t, m_t, hs_tm1):
-        if m_t.ndim >= 1:
-            m_t = m_t.dimshuffle(0, 'x')
 
-        # If deep input to dialogue encoder is enabled, run h_t through an MLP
-        transformed_h_t = h_t
-        if self.deep_dialogue_input: #prototype_test True
-            transformed_h_t = self.dialogue_rec_activation(T.dot(h_t, self.Ws_deep_input) + self.bs_deep_input)
-
-        hs_tilde = self.dialogue_rec_activation(T.dot(transformed_h_t, self.Ws_in) + T.dot(hs_tm1, self.Ws_hh) + self.bs_hh)
-
-        hs_t = (m_t) * hs_tm1 + (1 - m_t) * hs_tilde 
-        return hs_t
-
-    def GRU_dialogue_step(self, h_t, hs_tm1):
+    def GRU_step(self, h_t, hs_tm1):
         # If deep input to dialogue encoder is enabled, run h_t through an MLP
         transformed_h_t = h_t
         if self.deep_dialogue_input:
-            transformed_h_t = self.dialogue_rec_activation(T.dot(h_t, self.Ws_deep_input) + self.bs_deep_input)
+            transformed_h_t = self.GRU_rec_activation(T.dot(h_t, self.Ws_deep_input) + self.bs_deep_input)
 
         rs_t = T.nnet.sigmoid(T.dot(transformed_h_t, self.Ws_in_r) + T.dot(hs_tm1, self.Ws_hh_r) + self.bs_r)
         zs_t = T.nnet.sigmoid(T.dot(transformed_h_t, self.Ws_in_z) + T.dot(hs_tm1, self.Ws_hh_z) + self.bs_z)
-        hs_tilde = self.dialogue_rec_activation(T.dot(transformed_h_t, self.Ws_in) + T.dot(rs_t * hs_tm1, self.Ws_hh) + self.bs_hh)
+        hs_tilde = self.GRU_rec_activation(T.dot(transformed_h_t, self.Ws_in) + T.dot(rs_t * hs_tm1, self.Ws_hh) + self.bs_hh)
         hs_update = (np.float32(1.) - zs_t) * hs_tm1 + zs_t * hs_tilde
         
         hs_t = hs_update #从这里可以很明显的看出若词i不是</s>，那么的它的m_t为1，输出就是hs_tml（保持不变）；但处理到一个语句末尾是，即</s>时，输出值为hs_update.
@@ -177,13 +150,8 @@ class DialogEncoder(EncoderDecoderBase):
         if len(kwargs):
             one_step = True
          
-        # if x.ndim == 2 then 
-        # x = (n_steps, batch_size)
         if x.ndim == 2:
             batch_size = x.shape[1]
-        # else x = (word_1, word_2, word_3, ...)
-        # or x = (last_word_1, last_word_2, last_word_3, ..)
-        # in this case batch_size is 
         else:
             batch_size = 1
         
@@ -204,12 +172,8 @@ class DialogEncoder(EncoderDecoderBase):
         if xmask == None:
             xmask = T.neq(x, self.eos_sym)       
 
-        if self.dialogue_encoder_gating == "GRU": #True
-            f_hier = self.GRU_dialogue_step
-            o_hier_info = [hs_0, None, None, None]
-        else:
-            f_hier = self.plain_dialogue_step
-            o_hier_info = [hs_0]
+        f_hier = self.GRU_step
+        o_hier_info = [hs_0, None, None, None]
         
         # All hierarchical sentence
         # The hs sequence is based on the original mask
@@ -233,7 +197,7 @@ class DialogEncoder(EncoderDecoderBase):
         self.name = name
         self.init_params()
 
-class DialogEncoderDecoder(Model):
+class DocumentEncoder(Model):
 
     def compute_updates(self, training_cost, params):
         updates = []
@@ -254,12 +218,9 @@ class DialogEncoderDecoder(Model):
         
         grads = OrderedDict(clip_grads)
 
-        if self.initialize_from_pretrained_word_embeddings and self.fix_pretrained_word_embeddings:
-            # Keep pretrained word embeddings fixed
-            logger.debug("Will use mask to fix pretrained word embeddings")
-            grads[self.W_emb] = grads[self.W_emb] * self.W_emb_pretrained_mask
-        else:
-            logger.debug("Will train all word embeddings")
+        # Keep pretrained word embeddings fixed
+        logger.debug("Will use mask to fix pretrained word embeddings")
+        grads[self.W_emb] = grads[self.W_emb] * self.W_emb_pretrained_mask
 
         if self.updater == 'adagrad':
             updates = Adagrad(grads, self.lr)  
@@ -275,35 +236,6 @@ class DialogEncoderDecoder(Model):
             raise Exception("Updater not understood!") 
 
         return updates
-
-    def build_debug_function(self):
-        if not hasattr(self, 'test_fn'):
-            # Compile functions
-            logger.debug("Building test function")
-            
-            self.debug_fn = theano.function(inputs=[self.x_data, self.x_max_length],
-                                            outputs=[self.h, self.Doc_Vec, self.training_cost],
-                                            updates=self.updates + self.state_updates,
-                                            on_unused_input='ignore', 
-                                            name="debug_fn")
-            
-        return self.debug_fn    
-    
-        
-    def build_test_function(self):
-        if not hasattr(self, 'test_fn'):
-            # Compile functions
-            logger.debug("Building test function")
-            
-            self.test_fn = theano.function(inputs=[self.x_data, self.x_data_reversed, 
-                                                         self.x_max_length,
-                                                         self.x_semantic_targets, self.x_reset_mask, 
-                                                         self.ran_cost_utterance],
-                                            outputs=[self.Generate_Y, self.Target_Y, self.Doc_Vec],
-                                            on_unused_input='ignore', 
-                                            name="test_fn")
-            
-        return self.test_fn
         
     def build_train_function(self):
         if not hasattr(self, 'train_fn'):
@@ -328,69 +260,11 @@ class DialogEncoderDecoder(Model):
                                             updates=self.state_updates,
                                             on_unused_input='ignore', name="eval_fn")
         return self.eval_fn
-   
-        
+           
     def __init__(self, state):
         Model.__init__(self)
 
         # Compatibility towards older models
-        if 'bootstrap_from_semantic_information' in state:
-            assert state['bootstrap_from_semantic_information'] == False # We don't support semantic info right now...
-
-
-        if not 'bidirectional_utterance_encoder' in state:
-            state['bidirectional_utterance_encoder'] = False
-
-        if 'encode_with_l2_pooling' in state:
-            assert state['encode_with_l2_pooling'] == False # We don't support L2 pooling right now...
-
-        if not 'direct_connection_between_encoders_and_decoder' in state:
-            state['direct_connection_between_encoders_and_decoder'] = False
-
-        if not 'deep_direct_connection' in state:
-            state['deep_direct_connection'] = False
-
-        if not state['direct_connection_between_encoders_and_decoder']:
-            assert(state['deep_direct_connection'] == False)
-
-        if not 'collaps_to_standard_rnn' in state:
-            state['collaps_to_standard_rnn'] = False
-
-        #if not 'never_reset_decoder' in state:
-        #    state['never_reset_decoder'] = False
-
-        if not 'reset_utterance_decoder_at_end_of_utterance' in state:
-            state['reset_utterance_decoder_at_end_of_utterance'] = True
-
-        if not 'reset_utterance_encoder_at_end_of_utterance' in state:
-            state['reset_utterance_encoder_at_end_of_utterance'] = True
-
-        if not 'deep_dialogue_input' in state:
-            state['deep_dialogue_input'] = True
-
-        if not 'reset_hidden_states_between_subsequences' in state:
-            state['reset_hidden_states_between_subsequences'] = False
-
-        if not 'add_latent_gaussian_per_utterance' in state:
-           state['add_latent_gaussian_per_utterance'] = False
-        if not 'latent_gaussian_per_utterance_dim' in state:
-           state['latent_gaussian_per_utterance_dim'] = 1
-        if not 'condition_latent_variable_on_dialogue_encoder' in state:
-           state['condition_latent_variable_on_dialogue_encoder'] = True
-        if not 'condition_latent_variable_on_dcgm_encoder' in state:
-           state['condition_latent_variable_on_dcgm_encoder'] = False
-        if not 'scale_latent_variable_variances' in state:
-           state['scale_latent_variable_variances'] = 0.01
-        if not 'condition_decoder_only_on_latent_variable' in state:
-           state['condition_decoder_only_on_latent_variable'] = False
-        if not 'train_latent_gaussians_with_batch_normalization' in state:
-           state['train_latent_gaussians_with_batch_normalization'] = False
-
-        if state['condition_latent_variable_on_dialogue_encoder']:
-            assert state['add_latent_gaussian_per_utterance']
-
-        if state['condition_latent_variable_on_dcgm_encoder']:
-            assert state['add_latent_gaussian_per_utterance']
 
         self.state = state
         self.global_params = []
@@ -400,14 +274,7 @@ class DialogEncoderDecoder(Model):
 
         # Load dictionary
         raw_dict = cPickle.load(open(self.dictionary, 'r'))
-        # Probabilities for each term in the corpus
-        self.noise_probs = [x[2] for x in sorted(raw_dict, key=operator.itemgetter(1))]
-        self.noise_probs = numpy.array(self.noise_probs, dtype='float64')
-        self.noise_probs /= numpy.sum(self.noise_probs)
-        self.noise_probs = self.noise_probs ** 0.75
-        self.noise_probs /= numpy.sum(self.noise_probs)
         
-        self.t_noise_probs = theano.shared(self.noise_probs.astype('float32'), 't_noise_probs')
         # Dictionaries to convert str to idx and vice-versa
         self.str_to_idx = dict([(tok, tok_id) for tok, tok_id, _, _ in raw_dict]) #字典里的每一项包含四个字段，（字符，字符号，词频，文本频率）
         self.idx_to_str = dict([(tok_id, tok) for tok, tok_id, freq, _ in raw_dict])
@@ -455,40 +322,34 @@ class DialogEncoderDecoder(Model):
         training_hs_mask = T.neq(training_x, self.eos_sym) #所有非结束符</s>为True，即training_x不等于1的位置为True，维度和training_x一致
         #training_x_cost_mask = self.x_cost_mask[1:self.x_max_length].flatten() #x表示一段对话，x_max_length表示这段对话包含的字符数目
         
-        # Build word embeddings, which are shared throughout the model
-        if self.initialize_from_pretrained_word_embeddings == True:
-            # Load pretrained word embeddings from pickled file
-            logger.debug("Loading pretrained word embeddings")
-            pretrained_embeddings = cPickle.load(open(self.pretrained_word_embeddings_file, 'r')) #pretrained_embeddings为一个list，包含两个元素，第一个是word embedding（array类型）
+        # Load pretrained word embeddings from pickled file
+        logger.debug("Loading pretrained word embeddings")
+        pretrained_embeddings = cPickle.load(open(self.pretrained_word_embeddings_file, 'r')) #pretrained_embeddings为一个list，包含两个元素，第一个是word embedding（array类型）
 
-            # Check all dimensions match from the pretrained embeddings
-            assert(self.idim == pretrained_embeddings[0].shape[0])
-            assert(self.rankdim == pretrained_embeddings[0].shape[1])
-            assert(self.idim == pretrained_embeddings[1].shape[0])
-            assert(self.rankdim == pretrained_embeddings[1].shape[1])
+        # Check all dimensions match from the pretrained embeddings
+        assert(self.idim == pretrained_embeddings[0].shape[0])
+        assert(self.rankdim == pretrained_embeddings[0].shape[1])
+        assert(self.idim == pretrained_embeddings[1].shape[0])
+        assert(self.rankdim == pretrained_embeddings[1].shape[1])
 
-            self.W_emb_pretrained_mask = theano.shared(pretrained_embeddings[1].astype(numpy.float32), name='W_emb_mask')
-            self.W_emb = add_to_params(self.global_params, theano.shared(value=pretrained_embeddings[0].astype(numpy.float32), name='W_emb'))#是一个matrix，每一行是一个词的embedding
-        else:
-            # Initialize word embeddings randomly
-            self.W_emb = add_to_params(self.global_params, theano.shared(value=NormalInit(self.rng, self.idim, self.rankdim), name='W_emb'))
+        self.W_emb_pretrained_mask = theano.shared(pretrained_embeddings[1].astype(numpy.float32), name='W_emb_mask')
+        self.W_emb = add_to_params(self.global_params, theano.shared(value=pretrained_embeddings[0].astype(numpy.float32), name='W_emb'))#是一个matrix，每一行是一个词的embedding
 
         # Variables to store encoder and decoder states
-        self.ph = theano.shared(value=numpy.zeros((self.bs, self.qdim_encoder), dtype='float32'), name='ph')
         self.phs = theano.shared(value=numpy.zeros((self.bs, self.sdim), dtype='float32'), name='phs')
 
-        logger.debug("Initializing utterance encoder")
-        self.utterance_encoder = UtteranceEncoder(self.state, self.rng, self.W_emb, self, 'fwd')
-        logger.debug("Build utterance encoder")
+        logger.debug("Initializing word encoder")
+        self.word_encoder = WordEncoder(self.state, self.rng, self.W_emb, self, 'fwd')
+        logger.debug("Build word encoder")
         # The encoder h embedding is the final hidden state of the forward encoder RNN
-        self.h = self.utterance_encoder.build_encoder(training_x,)
+        self.h = self.word_encoder.build_encoder(training_x,)
 
         
-        logger.debug("Initializing dialog encoder")
-        self.dialog_encoder = DialogEncoder(self.state, self.rng, self, '')
+        logger.debug("Initializing sentence encoder")
+        self.sent_encoder = SentEncoder(self.state, self.rng, self, '')
 
-        logger.debug("Build dialog encoder")
-        self.hs = self.dialog_encoder.build_encoder(self.h, training_x, xmask=training_hs_mask, prev_state=self.phs)
+        logger.debug("Build sentence encoder")
+        self.hs = self.sent_encoder.build_encoder(self.h, training_x, xmask=training_hs_mask, prev_state=self.phs)
 
         # We initialize the stochastic "latent" variables
         # platent_utterance_variable_prior
@@ -512,14 +373,7 @@ class DialogEncoderDecoder(Model):
         
         self.Target_Y = Dtraining_y
         self.Gen_pro = outputs
-        #self.Test_prevs = self.hd_input
-        #self.test1 = outputs
-        #self.test2 = y
-        #self.test3 = target_probs
-            
         
-        # Prediction cost and rank cost
-        #self.contrastive_cost = T.sum(contrastive_cost.flatten() * training_x_cost_mask)
         self.sigmoid_cost = -T.log(target_probs) #* training_x_cost_mask
         #self.softmax_cost_acc = 
 
@@ -530,23 +384,9 @@ class DialogEncoderDecoder(Model):
         
         
         # Init params
-        if self.collaps_to_standard_rnn:
-                self.params = self.global_params + self.utterance_decoder.params
-                assert len(set(self.params)) == (len(self.global_params) + len(self.utterance_decoder.params))
-        else:
-            if self.bidirectional_utterance_encoder:
-                self.params = self.global_params + self.utterance_encoder_forward.params + self.utterance_encoder_backward.params + self.dialog_encoder.params + self.utterance_decoder.params
-                assert len(set(self.params)) == (len(self.global_params) + len(self.utterance_encoder_forward.params) + len(self.utterance_encoder_backward.params) + len(self.dialog_encoder.params) + len(self.utterance_decoder.params))
-            else:
-                self.params = self.global_params + self.utterance_encoder.params + self.dialog_encoder.params #+ self.utterance_decoder.params
-                assert len(set(self.params)) == (len(self.global_params) + len(self.utterance_encoder.params) + len(self.dialog_encoder.params)) #+ len(self.utterance_decoder.params))
+        self.params = self.global_params + self.word_encoder.params + self.sent_encoder.params
+        assert len(set(self.params)) == (len(self.global_params) + len(self.word_encoder.params) + len(self.sent_encoder.params))
 
-        if self.add_latent_gaussian_per_utterance:
-            self.params += self.latent_utterance_variable_prior_encoder.params
-            self.params += self.latent_utterance_variable_approx_posterior_encoder.params
-
-            if self.condition_latent_variable_on_dcgm_encoder:
-                self.params += self.dcgm_encoder.params
 
         self.updates = self.compute_updates(self.training_cost / training_x.shape[1], self.params)
 
@@ -555,42 +395,8 @@ class DialogEncoderDecoder(Model):
         #x_reset = self.x_reset_mask.dimshuffle(0, 'x')
         # if flag 'reset_hidden_states_between_subsequences' is on, then
         # always reset
-        if self.reset_hidden_states_between_subsequences:
-            x_reset = 0
-
-        # Next, compute updates using reset mask (this depends on the number of RNNs in the model)
+        
         x_reset = 0
         self.state_updates = []
-        if self.bidirectional_utterance_encoder:
-            #self.state_updates.append((self.ph_fwd, x_reset * res_forward[-1]))
-            #self.state_updates.append((self.ph_bck, x_reset * res_backward[-1]))
-            self.state_updates.append((self.phs, x_reset * self.hs[-1]))
-        else:
-            #self.state_updates.append((self.ph, x_reset * self.h[-1]))
-            self.state_updates.append((self.phs, x_reset * self.hs[-1]))
-            #self.state_updates.append((self.phd, x_reset * self.hd[-1]))
-
-        if self.direct_connection_between_encoders_and_decoder:
-            self.state_updates.append((self.phs_dummy, x_reset * self.hs_dummy[-1]))
-
-        if self.add_latent_gaussian_per_utterance:
-            self.state_updates.append((self.platent_utterance_variable_prior, x_reset * self.latent_utterance_variable_prior[-1]))
-            self.state_updates.append((self.platent_utterance_variable_approx_posterior, x_reset * self.latent_utterance_variable_approx_posterior[-1]))
-
-            if self.condition_latent_variable_on_dcgm_encoder:
-                self.state_updates.append((self.platent_dcgm_avg, x_reset * self.latent_dcgm_avg[-1]))
-                self.state_updates.append((self.platent_dcgm_n, x_reset.T * self.latent_dcgm_n[-1]))
+        self.state_updates.append((self.phs, x_reset * self.hs[-1]))
         
-
-        # Beam-search variables
-        self.beam_x_data = T.imatrix('beam_x_data')
-        self.beam_source = T.lvector("beam_source")
-        #self.beam_source = T.imatrix("beam_source")
-        #         self.x_data = T.imatrix('x_data')
-        self.beam_hs = T.matrix("beam_hs")
-        self.beam_step_num = T.lscalar("beam_step_num")
-        self.beam_hd = T.matrix("beam_hd")
-        #self.beam_ran_cost_utterance = T.fvector('beam_ran_cost_utterance')
-
-        # DEBUG CODE USED TO COMPARE TO NO-TRUNCATED VERSION
-        #self.get_hs_func = theano.function(inputs=[self.x_data, self.x_data_reversed, self.x_max_length, self.x_cost_mask, self.x_semantic_targets, self.x_reset_mask], outputs=self.hd, updates=self.state_updates, on_unused_input='ignore', name="get_hs_fn")
