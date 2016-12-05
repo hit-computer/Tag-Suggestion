@@ -109,11 +109,11 @@ def prototype_zhifu():
     state = prototype_state()
     
     # Fill your paths here! 
-    state['train_dialogues'] = "./Data/ttrain.dialogues.pkl"
-    state['valid_dialogues'] = "./Data/tvalid.dialogues.pkl"
+    state['train_dialogues'] = "./Data/ttrain.dialogues.pkl" #训练数据
+    state['valid_dialogues'] = "./Data/tvalid.dialogues.pkl" #测试数据
     state['dictionary'] = "./Data/ttrain.dict.pkl" #词表
     state['save_dir'] = "./Data/models/"
-    state['pretrained_word_embeddings_file'] = './Data/MT_WordEmb.pkl' 
+    state['pretrained_word_embeddings_file'] = './Data/MT_WordEmb.pkl' #预先训练好的词向量
     
 
     state['max_grad_steps'] = 800 #截断长度
@@ -124,7 +124,7 @@ def prototype_zhifu():
     
     
     # Validation frequency
-    state['valid_freq'] = 100000
+    state['valid_freq'] = 100000 #每训练多少次进行一次测试并保存模型
     state['loop_iters'] = 2000010 #一个数据算训练一次
     state['train_freq'] = 5000
 
@@ -135,12 +135,11 @@ def prototype_zhifu():
     state['deep_dialogue_input'] = True
 
     
-    state['qdim_encoder'] = 300
-    state['qdim_decoder'] = 300
+    state['qdim_encoder'] = 300 #句子向量维度
     # Dimensionality of dialogue hidden layer 
     state['sdim'] = 600 #hs,文本编码的长度
     # Dimensionality of low-rank approximation
-    state['rankdim'] = 100
+    state['rankdim'] = 100 #词向量维度
     state['cnum'] = 5000 #总的标签类别数目
     state['category'] = './Data/category.pkl' #类别标签list
     return state    
