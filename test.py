@@ -1,11 +1,9 @@
-#coding:utf-8
-
 # -*- coding: utf-8 -*-
 #!/usr/bin/env python
 
 from data_iterator import *
 from state import *
-from dialog_encdec import *
+from doc_encdec import *
 from utils import *
 from evaluation import *
 

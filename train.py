@@ -3,7 +3,7 @@
 
 from data_iterator import *
 from state import *
-from dialog_encdec import *
+from doc_encdec import *
 from utils import *
 
 import time
