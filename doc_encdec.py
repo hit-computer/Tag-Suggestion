@@ -140,7 +140,7 @@ class SentEncoder(EncoderDecoderBase):
         rs_t = T.nnet.sigmoid(T.dot(transformed_h_t, self.Ws_in_r) + T.dot(hs_tm1, self.Ws_hh_r) + self.bs_r)
         zs_t = T.nnet.sigmoid(T.dot(transformed_h_t, self.Ws_in_z) + T.dot(hs_tm1, self.Ws_hh_z) + self.bs_z)
         hs_tilde = self.GRU_rec_activation(T.dot(transformed_h_t, self.Ws_in) + T.dot(rs_t * hs_tm1, self.Ws_hh) + self.bs_hh)
-        hs_update = (np.float32(1.) - zs_t) * hs_tm1 + zs_t * hs_tilde
+        hs_update = zs_t * hs_tm1 + (np.float32(1.) - zs_t) * hs_tilde
         
         hs_t = hs_update #从这里可以很明显的看出若词i不是</s>，那么的它的m_t为1，输出就是hs_tml（保持不变）；但处理到一个语句末尾是，即</s>时，输出值为hs_update.
         return hs_t, hs_tilde, rs_t, zs_t
